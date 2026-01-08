@@ -1,21 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import "./App.css";
 import { Route, Routes } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
-import Reels from "./pages/Reels.jsx";
-import ContactUs from "./pages/ContactUs.jsx";
-import CertificatePage from "./pages/CertificatePage.jsx";
-import GamifiedAssessmentPage from "./pages/GamifiedAssessmentPage.jsx";
-import AdvancedSyllabusPage from "./pages/AdvancedSyllabusPage.jsx";
-import Home from "./pages/Home.jsx";
 import LeftSidebar from "./components/LeftSidebar.jsx";
-import CreatePost from "./components/CreatePost.jsx";
-import CoursesLanding from "./pages/CoursesLanding.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { ErrorProvider } from "./context/ErrorContext.jsx";
-import LearningMode from "./pages/LearningMode.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
-import Landing from "./pages/Landing.jsx";
+import { PostSkeleton } from "./components/SkeletonLoader.jsx";
+import { useWebVitals, reportWebVitals } from "./hooks/useWebVitals.js";
+import { performanceMonitor } from "./utils/performanceMonitor.js";
+
+// Lazy load route components for code splitting
+const Reels = lazy(() => import("./pages/Reels.jsx"));
+const ContactUs = lazy(() => import("./pages/ContactUs.jsx"));
+const CertificatePage = lazy(() => import("./pages/CertificatePage.jsx"));
+const GamifiedAssessmentPage = lazy(() => import("./pages/GamifiedAssessmentPage.jsx"));
+const AdvancedSyllabusPage = lazy(() => import("./pages/AdvancedSyllabusPage.jsx"));
+const Home = lazy(() => import("./pages/Home.jsx"));
+const CreatePost = lazy(() => import("./components/CreatePost.jsx"));
+const CoursesLanding = lazy(() => import("./pages/CoursesLanding.jsx"));
+const LearningMode = lazy(() => import("./pages/LearningMode.jsx"));
+const Landing = lazy(() => import("./pages/Landing.jsx"));
 
 const MainLayout = ({
   children,
@@ -99,6 +104,33 @@ const App = () => {
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("Home");
+
+  // Initialize Web Vitals monitoring
+  useWebVitals(reportWebVitals);
+
+  useEffect(() => {
+    // Mark app initialization
+    performanceMonitor.mark('app-init');
+    
+    // Register Service Worker
+    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+      navigator.serviceWorker
+        .register('/serviceWorker.js')
+        .then((registration) => {
+          console.log('[SW] Registered:', registration);
+        })
+        .catch((error) => {
+          console.error('[SW] Registration failed:', error);
+        });
+    }
+
+    // Measure app load time
+    window.addEventListener('load', () => {
+      performanceMonitor.mark('app-loaded');
+      performanceMonitor.measure('app-load-time', 'app-init', 'app-loaded');
+      performanceMonitor.report();
+    });
+  }, []);
 
   const stories = [
     {
@@ -220,8 +252,22 @@ const App = () => {
         />
 
         <Routes>
-          <Route path="/landing" element={<Landing />} />
-          <Route path="/learning" element={<LearningMode />} />
+          <Route
+            path="/landing"
+            element={
+              <Suspense fallback={<PostSkeleton />}>
+                <Landing />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/learning"
+            element={
+              <Suspense fallback={<PostSkeleton />}>
+                <LearningMode />
+              </Suspense>
+            }
+          />
 
           <Route
             path="/*"
@@ -232,7 +278,8 @@ const App = () => {
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
               >
-                <Routes>
+                <Suspense fallback={<PostSkeleton />}>
+                  <Routes>
                   <Route
                     path="/"
                     element={
@@ -263,6 +310,7 @@ const App = () => {
                     element={<AdvancedSyllabusPage />}
                   />
                 </Routes>
+                </Suspense>
               </MainLayout>
             }
           />
