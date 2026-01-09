@@ -3,79 +3,72 @@ import react from "@vitejs/plugin-react";
 import compression from "vite-plugin-compression";
 import { visualizer } from "rollup-plugin-visualizer";
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
-    // Gzip compression
-    compression({
-      algorithm: "gzip",
-      ext: ".gz",
-    }),
-    // Brotli compression
-    compression({
-      algorithm: "brotliCompress",
-      ext: ".br",
-    }),
-    // Bundle analyzer (only in analyze mode)
-    visualizer({
-      open: process.env.ANALYZE === "true",
-      filename: "dist/stats.html",
-      gzipSize: true,
-      brotliSize: true,
-    }),
-  ],
-  base: process.env.NODE_ENV === "production" ? "/College_Media/" : "/",
-  test: {
-    globals: true,
-    environment: "jsdom",
-    setupFiles: "./tests/setup.js",
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "json", "html", "lcov"],
-      exclude: [
-        "node_modules/",
-        "tests/",
-        "**/*.config.js",
-        "**/*.spec.js",
-        "**/*.test.js",
-      ],
-      thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 70,
-        statements: 80,
-      },
+export default defineConfig(({ command, mode }) => {
+  const isBuild = command === "build";
+
+  return {
+    plugins: [
+      react(),
+
+      // 🔹 Enable compression ONLY during build
+      isBuild &&
+        compression({
+          algorithm: "gzip",
+          ext: ".gz",
+        }),
+
+      isBuild &&
+        compression({
+          algorithm: "brotliCompress",
+          ext: ".br",
+        }),
+
+      // 🔹 Bundle analyzer ONLY during build
+      isBuild &&
+        visualizer({
+          open: process.env.ANALYZE === "true",
+          filename: "dist/stats.html",
+          gzipSize: true,
+          brotliSize: true,
+        }),
+    ].filter(Boolean),
+
+    // 🔹 Base path ONLY for production
+    base: isBuild ? "/College_Media/" : "/",
+
+    // 🔹 DEV SERVER (explicit)
+    server: {
+      host: true,
+      port: 5173,
     },
-  },
-  build: {
-    // Code splitting optimization
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          // Vendor chunks
-          react: ["react", "react-dom", "react-router-dom"],
-          ui: ["lucide-react", "@iconify/react"],
-          utils: ["axios", "immer", "use-immer"],
-          socket: ["socket.io-client"],
-        },
-      },
+
+    // 🔹 BUILD-ONLY settings
+    build: isBuild
+      ? {
+          rollupOptions: {
+            output: {
+              manualChunks: {
+                react: ["react", "react-dom", "react-router-dom"],
+                ui: ["lucide-react", "@iconify/react"],
+                utils: ["axios", "immer", "use-immer"],
+                socket: ["socket.io-client"],
+              },
+            },
+          },
+          chunkSizeWarningLimit: 500,
+          minify: "terser",
+          terserOptions: {
+            compress: {
+              drop_console: true,
+              drop_debugger: true,
+            },
+          },
+          sourcemap: false,
+        }
+      : {},
+
+    optimizeDeps: {
+      include: ["react", "react-dom", "react-router-dom"],
     },
-    // Chunk size warnings
-    chunkSizeWarningLimit: 500,
-    // Minification
-    minify: "terser",
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-      },
-    },
-    // Source maps for production debugging
-    sourcemap: false,
-  },
-  // Performance optimizations
-  optimizeDeps: {
-    include: ["react", "react-dom", "react-router-dom"],
-  },
+  };
 });
