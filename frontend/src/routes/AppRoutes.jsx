@@ -32,6 +32,8 @@ const ForgotPassword = lazy(() => import("../pages/ForgotPassword.jsx"));
 const NotificationCenter = lazy(() => import("../components/NotificationCenter.jsx"));
 const NotificationPreferences = lazy(() => import("../components/NotificationPreferences.jsx"));
 const SearchResults = lazy(() => import("../pages/SearchResults.jsx"));
+const ModerationDashboard = lazy(() => import("../pages/admin/ModerationDashboard.jsx"));
+const ReportDetail = lazy(() => import("../pages/admin/ReportDetail.jsx"));
 const Settings = lazy(() => import("../pages/Settings.jsx"));
 const Profile = lazy(() => import("../pages/Profile.jsx"));
 const EditProfile = lazy(() => import("../pages/EditProfile.jsx"));
@@ -194,6 +196,24 @@ const AppRoutes = ({
           element={
             <LazyWrapper>
               <NotificationPreferences />
+            </LazyWrapper>
+          }
+        />
+
+        <Route
+          path="admin/moderation"
+          element={
+            <LazyWrapper>
+              <ModerationDashboard />
+            </LazyWrapper>
+          }
+        />
+
+        <Route
+          path="admin/moderation/reports/:reportId"
+          element={
+            <LazyWrapper>
+              <ReportDetail />
             </LazyWrapper>
           }
         />
