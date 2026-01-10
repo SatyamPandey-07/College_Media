@@ -8,9 +8,6 @@ import { ModerationProvider } from "../context/ModerationContext.jsx";
 import Toaster from 'react-hot-toast'
 
 export const AppProviders = ({ children }) => {
-
-
-
     return (
         <ErrorProvider>
             <ModerationProvider>
