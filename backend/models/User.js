@@ -100,6 +100,11 @@ const userSchema = new mongoose.Schema({
       default: 'auto'
     }
   },
+  profileVisibility: {
+    type: String,
+    enum: ['public', 'followers', 'private'],
+    default: 'public'
+  },
   isVerified: {
     type: Boolean,
     default: false

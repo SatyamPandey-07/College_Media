@@ -129,6 +129,8 @@ export const accountApi = {
   updateSettings: (data) => apiClient.put('/account/settings', data),
   getNotificationPreferences: () => apiClient.get('/account/notification-preferences'),
   updateNotificationPreferences: (data) => apiClient.put('/account/notification-preferences', data),
+  getProfileVisibility: () => apiClient.get('/account/profile-visibility'),
+  updateProfileVisibility: (data) => apiClient.put('/account/profile-visibility', data),
 };
 
 // Export all APIs

@@ -6,6 +6,7 @@ import FontSizeModal from "../components/FontSizeModal";
 import ThemeModal from "../components/ThemeModal";
 import NotificationPreferencesModal from "../components/NotificationPreferencesModal";
 import BlockedUsersModal from "../components/BlockedUsersModal";
+import ProfileVisibilityModal from "../components/ProfileVisibilityModal";
 
 // import { useTheme } from '../context/ThemeContext';
 
@@ -29,6 +30,7 @@ const Settings = () => {
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showNotificationPreferences, setShowNotificationPreferences] = useState(false);
   const [showBlockedUsers, setShowBlockedUsers] = useState(false);
+  const [showProfileVisibility, setShowProfileVisibility] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -459,6 +461,7 @@ const Settings = () => {
           label: "Who can see your profile",
           description: "Control profile visibility",
           type: "link",
+          onClick: () => setShowProfileVisibility(true),
         },
       ],
     },
@@ -1008,6 +1011,11 @@ const Settings = () => {
       <BlockedUsersModal
         isOpen={showBlockedUsers}
         onClose={() => setShowBlockedUsers(false)}
+      />
+
+      <ProfileVisibilityModal
+        isOpen={showProfileVisibility}
+        onClose={() => setShowProfileVisibility(false)}
       />
     </div>
   );

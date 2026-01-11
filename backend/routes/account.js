@@ -648,6 +648,125 @@ router.put('/settings', verifyToken, async (req, res) => {
 });
 
 /**
+ * @route   GET /api/account/profile-visibility
+ * @desc    Get user's profile visibility setting
+ * @access  Private
+ */
+router.get('/profile-visibility', verifyToken, async (req, res) => {
+  try {
+    const dbConnection = req.app.get('dbConnection');
+    const useMongoDB = dbConnection?.useMongoDB;
+
+    let user;
+    if (useMongoDB) {
+      user = await UserMongo.findById(req.userId).select('profileVisibility');
+    } else {
+      user = await UserMock.findById(req.userId);
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        data: null,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        profileVisibility: user.profileVisibility || 'public'
+      },
+      message: 'Profile visibility retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Get profile visibility error:', error);
+    res.status(500).json({
+      success: false,
+      data: null,
+      message: 'Error retrieving profile visibility'
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/account/profile-visibility
+ * @desc    Update user's profile visibility setting
+ * @access  Private
+ */
+router.put('/profile-visibility', verifyToken, async (req, res) => {
+  try {
+    const { profileVisibility } = req.body;
+
+    // Validate profileVisibility value
+    const validOptions = ['public', 'followers', 'private'];
+    if (!profileVisibility || !validOptions.includes(profileVisibility)) {
+      return res.status(400).json({
+        success: false,
+        data: null,
+        message: `Invalid profile visibility. Must be one of: ${validOptions.join(', ')}`
+      });
+    }
+
+    const dbConnection = req.app.get('dbConnection');
+    const useMongoDB = dbConnection?.useMongoDB;
+
+    let user;
+    if (useMongoDB) {
+      user = await UserMongo.findByIdAndUpdate(
+        req.userId,
+        { profileVisibility },
+        { new: true }
+      ).select('profileVisibility');
+    } else {
+      user = await UserMock.findById(req.userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'User not found'
+        });
+      }
+
+      user.profileVisibility = profileVisibility;
+      user.updatedAt = new Date().toISOString();
+      const updated = await UserMock.updateOne({ _id: req.userId }, user);
+      
+      if (!updated) {
+        return res.status(500).json({
+          success: false,
+          data: null,
+          message: 'Failed to update profile visibility'
+        });
+      }
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        data: null,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        profileVisibility: user.profileVisibility
+      },
+      message: 'Profile visibility updated successfully'
+    });
+  } catch (error) {
+    console.error('Update profile visibility error:', error);
+    res.status(500).json({
+      success: false,
+      data: null,
+      message: 'Error updating profile visibility'
+    });
+  }
+});
+
+/**
  * @route   GET /api/account/notification-preferences
  * @desc    Get user's notification preferences
  * @access  Private
