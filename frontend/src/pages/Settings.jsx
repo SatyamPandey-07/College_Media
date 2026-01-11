@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { accountApi } from "../api/endpoints";
+import FontSizeModal from "../components/FontSizeModal";
 
 // import { useTheme } from '../context/ThemeContext';
 
@@ -21,6 +22,7 @@ const Settings = () => {
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showFontSizeModal, setShowFontSizeModal] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -441,6 +443,7 @@ const Settings = () => {
           label: "Font Size",
           description: "Adjust text size",
           type: "link",
+          onClick: () => setShowFontSizeModal(true),
         },
       ],
     },
@@ -471,8 +474,8 @@ const Settings = () => {
             {section.items.map((item, itemIndex) => (
               <div
                 key={itemIndex}
-                onClick={item.type === "button" ? item.onClick : undefined}
-                className={`flex items-center justify-between p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 ${item.type === "button" ? "cursor-pointer" : ""}`}
+                onClick={item.type === "button" ? item.onClick : (item.type === "link" && item.onClick) ? item.onClick : undefined}
+                className={`flex items-center justify-between p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 ${(item.type === "button" || (item.type === "link" && item.onClick)) ? "cursor-pointer" : ""}`}
               >
                 <div className="flex items-center space-x-4 flex-1">
                   <div className="text-2xl">{item.icon}</div>
@@ -823,6 +826,12 @@ const Settings = () => {
           </div>
         </div>
       )}
+
+      {/* Font Size Modal */}
+      <FontSizeModal 
+        isOpen={showFontSizeModal} 
+        onClose={() => setShowFontSizeModal(false)} 
+      />
     </div>
   );
 };

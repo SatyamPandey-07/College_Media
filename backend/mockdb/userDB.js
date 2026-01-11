@@ -182,6 +182,27 @@ const permanentDelete = (id) => {
   return true;
 };
 
+// Update one field (generic update method)
+const updateOne = (query, updateData) => {
+  const users = readUsers();
+  const userIndex = users.findIndex(user => user._id === query._id);
+  
+  if (userIndex === -1) {
+    return null;
+  }
+  
+  // Apply updates
+  Object.keys(updateData).forEach(key => {
+    users[userIndex][key] = updateData[key];
+  });
+  
+  users[userIndex].updatedAt = new Date().toISOString();
+  
+  writeUsers(users);
+  
+  return true;
+};
+
 module.exports = {
   findByEmail,
   findByUsername,
@@ -192,5 +213,6 @@ module.exports = {
   updatePassword,
   softDelete,
   restore,
-  permanentDelete
+  permanentDelete,
+  updateOne
 };

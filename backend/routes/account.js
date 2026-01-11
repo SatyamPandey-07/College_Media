@@ -353,6 +353,135 @@ router.get('/deletion-status', verifyToken, async (req, res) => {
 });
 
 /**
+ * @route   GET /api/account/settings
+ * @desc    Get user settings (font size, theme, etc.)
+ * @access  Private
+ */
+router.get('/settings', verifyToken, async (req, res) => {
+  try {
+    const dbConnection = req.app.get('dbConnection');
+    const useMongoDB = dbConnection?.useMongoDB;
+
+    // Get user
+    let user;
+    if (useMongoDB) {
+      user = await UserMongo.findById(req.userId).select('settings');
+    } else {
+      user = await UserMock.findById(req.userId);
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        data: null,
+        message: 'User not found'
+      });
+    }
+
+    const settings = user.settings || {
+      fontSize: 'medium',
+      theme: 'auto'
+    };
+
+    res.json({
+      success: true,
+      data: settings,
+      message: 'Settings retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Get settings error:', error);
+    res.status(500).json({
+      success: false,
+      data: null,
+      message: 'Error retrieving settings'
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/account/settings
+ * @desc    Update user settings (font size, theme, etc.)
+ * @access  Private
+ */
+router.put('/settings', verifyToken, async (req, res) => {
+  try {
+    const { fontSize, theme } = req.body;
+    const dbConnection = req.app.get('dbConnection');
+    const useMongoDB = dbConnection?.useMongoDB;
+
+    // Validate fontSize if provided
+    if (fontSize && !['small', 'medium', 'large'].includes(fontSize)) {
+      return res.status(400).json({
+        success: false,
+        data: null,
+        message: 'Invalid font size. Must be small, medium, or large.'
+      });
+    }
+
+    // Validate theme if provided
+    if (theme && !['light', 'dark', 'auto'].includes(theme)) {
+      return res.status(400).json({
+        success: false,
+        data: null,
+        message: 'Invalid theme. Must be light, dark, or auto.'
+      });
+    }
+
+    // Get user
+    let user;
+    if (useMongoDB) {
+      user = await UserMongo.findById(req.userId);
+    } else {
+      user = await UserMock.findById(req.userId);
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        data: null,
+        message: 'User not found'
+      });
+    }
+
+    // Initialize settings object if it doesn't exist
+    if (!user.settings) {
+      user.settings = {
+        fontSize: 'medium',
+        theme: 'auto'
+      };
+    }
+
+    // Update settings
+    if (fontSize) {
+      user.settings.fontSize = fontSize;
+    }
+    if (theme) {
+      user.settings.theme = theme;
+    }
+
+    // Save user
+    if (useMongoDB) {
+      await user.save();
+    } else {
+      await UserMock.updateOne({ _id: req.userId }, { settings: user.settings });
+    }
+
+    res.json({
+      success: true,
+      data: user.settings,
+      message: 'Settings updated successfully'
+    });
+  } catch (error) {
+    console.error('Update settings error:', error);
+    res.status(500).json({
+      success: false,
+      data: null,
+      message: 'Error updating settings'
+    });
+  }
+});
+
+/**
  * @route   POST /api/account/export-data
  * @desc    Export user's data (GDPR compliance)
  * @access  Private

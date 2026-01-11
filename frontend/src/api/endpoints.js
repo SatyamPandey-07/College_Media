@@ -138,6 +138,8 @@ export const accountApi = {
   permanentDelete: (data) => apiClient.delete('/account/permanent', { data }),
   getDeletionStatus: () => apiClient.get('/account/deletion-status'),
   exportData: () => apiClient.post('/account/export-data'),
+  getSettings: () => apiClient.get('/account/settings'),
+  updateSettings: (data) => apiClient.put('/account/settings', data),
 };
 
 // Export all APIs
