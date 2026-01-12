@@ -11,7 +11,9 @@ const multer = require('multer');
 const path = require('path');
 const logger = require('../utils/logger');
 const { apiLimiter } = require('../middleware/rateLimitMiddleware');
+
 const { isValidName, isValidBio, isValidEmail } = require('../utils/validators');
+const { cacheMiddleware, invalidateCache } = require('../middleware/cacheMiddleware');
 
 const JWT_SECRET =
   process.env.JWT_SECRET || "college_media_secret_key";
@@ -75,7 +77,7 @@ const upload = multer({
 });
 
 // Get current user profile
-router.get('/profile', verifyToken, async (req, res, next) => {
+router.get('/profile', verifyToken, cacheMiddleware({ prefix: 'user-profile', ttl: 300 }), async (req, res, next) => {
   try {
     // Get database connection from app
     const dbConnection = req.app.get('dbConnection');
@@ -120,7 +122,7 @@ router.get('/profile', verifyToken, async (req, res, next) => {
 });
 
 // Update user profile
-router.put('/profile', verifyToken, validateProfileUpdate, checkValidation, async (req, res, next) => {
+router.put('/profile', verifyToken, validateProfileUpdate, checkValidation, invalidateCache(['user-profile::userId']), async (req, res, next) => {
   try {
     const { firstName, lastName, bio } = req.body;
 
@@ -200,7 +202,27 @@ router.put('/profile', verifyToken, validateProfileUpdate, checkValidation, asyn
   }
 });
 
-if (!fs.existsSync("uploads/")) fs.mkdirSync("uploads/");
+// Upload profile picture
+router.post('/profile-picture', verifyToken, upload.single('profilePicture'), invalidateCache(['user-profile::userId']), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        data: null,
+        message: 'No file uploaded'
+      });
+    }
+
+    // Get database connection from app
+    const dbConnection = req.app.get('dbConnection');
+
+    if (dbConnection && dbConnection.useMongoDB) {
+      // Use MongoDB
+      const updatedUser = await UserMongo.findByIdAndUpdate(
+        req.userId,
+        { profilePicture: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}` },
+        { new: true, runValidators: true }
+      ).select('-password');
 
 /* =====================================================
    👤 GET CURRENT USER PROFILE
@@ -214,21 +236,143 @@ if (!fs.existsSync("uploads/")) fs.mkdirSync("uploads/");
           .status(404)
           .json({ success: false, message: "User not found" });
 
-      return res.json({
+      if (!updatedUser) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'User not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          profilePicture: updatedUser.profilePicture
+        },
+        message: 'Profile picture uploaded successfully'
+      });
+    }
+  } catch (error) {
+    logger.error('Upload profile picture error:', error);
+    next(error);
+  }
+});
+
+// Get user by username (for viewing other profiles)
+router.get('/profile/:username', verifyToken, cacheMiddleware({
+  prefix: 'user-profile-public',
+  ttl: 300,
+  keyGenerator: (req) => `cache:user-profile-public:${req.params.username}`
+}), async (req, res, next) => {
+  try {
+    const { username } = req.params;
+
+    // Get database connection from app
+    const dbConnection = req.app.get('dbConnection');
+
+    if (dbConnection && dbConnection.useMongoDB) {
+      // Use MongoDB
+      const user = await UserMongo.findOne({ username }).select('-password -email');
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'User not found'
+        });
+      }
+
+      res.json({
         success: true,
         data: user,
       });
     }
 
-    const user = await UserMock.findById(req.userId);
-    res.json({ success: true, data: user });
-  } catch (err) {
-    next(err);
+// Get user's posts
+router.get('/profile/:username/posts', verifyToken, cacheMiddleware({
+  prefix: 'user-posts-public',
+  ttl: 60,
+  keyGenerator: (req) => `cache:user-posts-public:${req.params.username}`
+}), async (req, res, next) => {
+  try {
+    const { username } = req.params;
+
+    // Get database connection from app
+    const dbConnection = req.app.get('dbConnection');
+
+    if (dbConnection && dbConnection.useMongoDB) {
+      // Use MongoDB - You'll need to create a Post model
+      const user = await UserMongo.findOne({ username });
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'User not found'
+        });
+      }
+
+      // TODO: Implement Post model and fetch posts
+      res.json({
+        success: true,
+        data: [],
+        message: 'Posts retrieved successfully'
+      });
+    } else {
+      // Use mock database - return mock posts
+      const mockPosts = [
+        {
+          _id: 1,
+          imageUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=400&h=400&fit=crop',
+          likes: 234,
+          commentCount: 45,
+          createdAt: new Date()
+        },
+        {
+          _id: 2,
+          imageUrl: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=400&fit=crop',
+          likes: 189,
+          commentCount: 32,
+          createdAt: new Date()
+        }
+      ];
+
+      res.json({
+        success: true,
+        data: mockPosts,
+        message: 'Posts retrieved successfully'
+      });
+    }
+  } catch (error) {
+    logger.error('Get user posts error:', error);
+    next(error);
   }
 });
 
-/* =====================================================
-   ✏️ UPDATE PROFILE (CONCURRENT SAFE)
+// Update profile settings (email, privacy, etc.)
+router.put('/profile/settings', verifyToken, invalidateCache(['user-profile::userId']), async (req, res, next) => {
+  try {
+    const { email, isPrivate, notificationSettings } = req.body;
+
+    // Get database connection from app
+    const dbConnection = req.app.get('dbConnection');
+
+    const updateData = {};
+    if (email) updateData.email = email;
+    if (typeof isPrivate !== 'undefined') updateData.isPrivate = isPrivate;
+    if (notificationSettings) updateData.notificationSettings = notificationSettings;
+
+    if (dbConnection && dbConnection.useMongoDB) {
+      // Use MongoDB
+      const updatedUser = await UserMongo.findByIdAndUpdate(
+        req.userId,
+        updateData,
+        { new: true, runValidators: true }
+      ).select('-password');
+
+      if (!updatedUser) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'User not found'
         });
       }
 
@@ -249,9 +393,8 @@ if (!fs.existsSync("uploads/")) fs.mkdirSync("uploads/");
   }
 );
 
-/* =====================================================
-   ⚙️ UPDATE SETTINGS (CONCURRENT SAFE)
-router.put("/profile/settings", verifyToken, async (req, res, next) => {
+// Get profile stats (followers, following, posts count)
+router.get('/profile/stats', verifyToken, cacheMiddleware({ prefix: 'user-stats', ttl: 300 }), async (req, res, next) => {
   try {
     const { email, isPrivate, notificationSettings } = req.body;
     const db = req.app.get("dbConnection");
@@ -305,36 +448,11 @@ router.put("/profile/settings", verifyToken, async (req, res, next) => {
   }
 });
 
-/* =====================================================
-   🤝 FOLLOW / UNFOLLOW (CONCURRENT SAFE)
-===================================================== */
-router.post(
-  "/profile/:username/follow",
-  verifyToken,
-  async (req, res, next) => {
-    try {
-      const { username } = req.params;
-      const db = req.app.get("dbConnection");
-
-      if (db?.useMongoDB) {
-        const targetUser = await UserMongo.findOne({ username });
-        if (!targetUser)
-          return res
-            .status(404)
-            .json({ success: false, message: "User not found" });
-
-        const currentUser = await UserMongo.findById(req.userId);
-        const isFollowing = currentUser.following.includes(
-          targetUser._id
-        );
-
-        if (isFollowing) {
-          currentUser.following.pull(targetUser._id);
-          targetUser.followers.pull(req.userId);
-        } else {
-          currentUser.following.addToSet(targetUser._id);
-          targetUser.followers.addToSet(req.userId);
-        }
+// Delete profile picture
+router.delete('/profile-picture', verifyToken, invalidateCache(['user-profile::userId']), async (req, res, next) => {
+  try {
+    // Get database connection from app
+    const dbConnection = req.app.get('dbConnection');
 
         // 🔥 BOTH VERSION CHECKED
         await currentUser.safeSave();

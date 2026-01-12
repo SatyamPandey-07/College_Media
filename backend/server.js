@@ -1,4 +1,5 @@
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
@@ -7,27 +8,18 @@ const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const logger = require('./utils/logger');
 const { globalLimiter } = require('./middleware/rateLimitMiddleware');
 const { sanitizeAll, validateContentType, preventParameterPollution } = require('./middleware/sanitizationMiddleware');
+require('./utils/redisClient'); // Initialize Redis client
 
 dotenv.config();
 
 const ENV = process.env.NODE_ENV || "development";
 const PORT = process.env.PORT || 5000;
 
-const app = express();
-const server = http.createServer(app);
-
-app.disable("x-powered-by");
-
-/* =================================================
-   🚩 FEATURE FLAGS
-================================================= */
-const FEATURE_FLAGS = Object.freeze({
-  ENABLE_EXPERIMENTAL_RESUME: ENV !== "production",
-  ENABLE_NEW_MESSAGING_FLOW: ENV !== "production",
-  ENABLE_DEBUG_LOGS: ENV !== "production",
-  ENABLE_STRICT_RATE_LIMITING: ENV === "production",
-  ENABLE_VERBOSE_ERRORS: ENV !== "production",
-});
+// Middleware
+app.use(compression()); // Compress all responses
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 /* ---------- Feature Flag Validation ---------- */
 (() => {
