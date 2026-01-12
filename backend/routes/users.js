@@ -7,8 +7,12 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const logger = require('../utils/logger');
+const { apiLimiter } = require('../middleware/rateLimitMiddleware');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'college_media_secret_key';
+
+// Apply general rate limiter to all user routes
+router.use(apiLimiter);
 
 // Middleware to verify JWT token
 const verifyToken = (req, res, next) => {
