@@ -15,41 +15,16 @@ const http = require("http");
 const os = require("os");
 const { startEventLoopMonitor } = require("./utils/eventLoopMonitor");
 
-/* ------------------
-   🔧 INTERNAL IMPORTS
------------------- */
-const { initDB } = require("./config/db");
-const { notFound, errorHandler } = require("./middleware/errorMiddleware");
-const resumeRoutes = require("./routes/resume");
-const uploadRoutes = require("./routes/upload");
-const { globalLimiter, authLimiter } = require("./middleware/rateLimiter");
-const { slidingWindowLimiter } = require("./middleware/slidingWindowLimiter");
-const { warmUpCache } = require("./utils/cache");
-const logger = require("./utils/logger");
-
-/* ------------------
-   🌱 ENV SETUP
------------------- */
 dotenv.config();
 
 const ENV = process.env.NODE_ENV || "development";
 const PORT = process.env.PORT || 5000;
 
-const app = express();
-const server = http.createServer(app);
-
-app.disable("x-powered-by");
-
-/* =================================================
-   🚩 FEATURE FLAGS
-================================================= */
-const FEATURE_FLAGS = Object.freeze({
-  ENABLE_EXPERIMENTAL_RESUME: ENV !== "production",
-  ENABLE_NEW_MESSAGING_FLOW: ENV !== "production",
-  ENABLE_DEBUG_LOGS: ENV !== "production",
-  ENABLE_STRICT_RATE_LIMITING: ENV === "production",
-  ENABLE_VERBOSE_ERRORS: ENV !== "production",
-});
+// Middleware
+app.use(compression()); // Compress all responses
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 /* ---------- Feature Flag Validation ---------- */
 (() => {
@@ -60,43 +35,17 @@ const FEATURE_FLAGS = Object.freeze({
     }
   });
 
-  if (
-    ENV === "production" &&
-    (FEATURE_FLAGS.ENABLE_EXPERIMENTAL_RESUME ||
-      FEATURE_FLAGS.ENABLE_NEW_MESSAGING_FLOW)
-  ) {
-    logger.critical("Unsafe feature flags enabled in production");
-    process.exit(1);
-  }
+// Apply input sanitization (XSS & NoSQL injection protection)
+app.use(sanitizeAll);
 
-  logger.info("Feature flags loaded", { env: ENV, FEATURE_FLAGS });
-})();
+// Validate Content-Type for POST/PUT/PATCH requests
+app.use(validateContentType);
 
-/* ------------------
-   🌍 CORS
------------------- */
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  })
-);
+// Prevent parameter pollution
+app.use(preventParameterPollution(['tags', 'categories'])); // Allow arrays for specific params
 
-/* ------------------
-   📦 BODY PARSERS
------------------- */
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
-
-/* ------------------
-   ⏱️ REQUEST TIMEOUT GUARD
------------------- */
-app.use((req, res, next) => {
-  req.setTimeout(10 * 60 * 1000);
-  res.setTimeout(10 * 60 * 1000);
-  next();
-});
+// Static file serving for uploaded images
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 /* ------------------
    🐢 SLOW REQUEST LOGGER
@@ -197,6 +146,7 @@ const startServer = async () => {
   }
 
   app.use("/api/account", require("./routes/account"));
+  app.use("/api/notifications", require("./routes/notifications"));
 
   app.use(notFound);
   app.use(errorHandler);
