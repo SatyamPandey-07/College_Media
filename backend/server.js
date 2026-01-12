@@ -1,14 +1,10 @@
-const express = require("express");
-const cors = require("cors");
-const dotenv = require("dotenv");
-const path = require("path");
-
-const { initDB } = require("./config/db");
-const { notFound, errorHandler } = require("./middleware/errorMiddleware");
-const resumeRoutes = require("./routes/resume");
-const uploadRoutes = require("./routes/upload");
-const { globalLimiter, authLimiter } = require("./middleware/rateLimiter");
-const { slidingWindowLimiter } = require("./middleware/slidingWindowLimiter");
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const path = require('path');
+const { initDB } = require('./config/db');
+const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const logger = require('./utils/logger');
 
 dotenv.config();
 
@@ -81,13 +77,18 @@ const startServer = async () => {
 
   try {
     dbConnection = await initDB();
-    app.set("dbConnection", dbConnection);
-    console.log("Database initialized successfully");
+
+    // Set the database connection globally so routes can access it
+    app.set('dbConnection', dbConnection);
+
+    logger.info('Database initialized successfully');
   } catch (error) {
-    console.error("Database initialization error:", error);
+    logger.error('Database initialization error:', error);
+    // Don't exit, just use mock database
     dbConnection = { useMongoDB: false, mongoose: null };
-    app.set("dbConnection", dbConnection);
-    console.log("Using file-based database as fallback");
+    app.set('dbConnection', dbConnection);
+
+    logger.warn('Using file-based database as fallback');
   }
 
   // ------------------
@@ -107,8 +108,9 @@ const startServer = async () => {
   app.use(notFound);      // 404 handler
   app.use(errorHandler); // global error handler
 
+  // Start the server
   app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+    logger.info(`Server is running on port ${PORT}`);
   });
 };
 
