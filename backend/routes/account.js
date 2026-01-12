@@ -29,12 +29,8 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-/**
- * @route   DELETE /api/account
- * @desc    Delete user account (soft delete)
- * @access  Private
- */
-router.delete('/', verifyToken, sensitiveLimiter, validateAccountDeletion, checkValidation, async (req, res) => {
+/* =====================================================
+   GET USER PROFILE
   try {
     const { password, reason } = req.body;
     logger.info('Delete account request received:', {
