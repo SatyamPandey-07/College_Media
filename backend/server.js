@@ -12,6 +12,12 @@ const { slidingWindowLimiter } = require("./middleware/slidingWindowLimiter");
 
 dotenv.config();
 
+// 🔥 HARD PROOF TEST - Check if MISTRAL_API_KEY is loaded
+console.log("=" .repeat(60));
+console.log("🔍 ENVIRONMENT VARIABLE CHECK:");
+console.log("MISTRAL_API_KEY:", process.env.MISTRAL_API_KEY ? `EXISTS (length: ${process.env.MISTRAL_API_KEY.length})` : "❌ NOT FOUND");
+console.log("=" .repeat(60));
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
