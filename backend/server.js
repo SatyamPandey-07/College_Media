@@ -269,13 +269,26 @@ const startServer = async () => {
     process.exit(1);
   }
 
-// Start server only if run directly
-if (require.main === module) {
-  connectDB().then(() => {
-    initSocket(server);
-    server.listen(PORT, () => {
-      logger.info(`Server is running on port ${PORT}`);
-    });
+  // ------------------
+  // 🔐 ROUTES
+  // ------------------
+  app.use("/api/auth", authLimiter, require("./routes/auth"));
+  app.use("/api/users", require("./routes/users"));
+  app.use("/api/resume", resumeRoutes);
+  app.use("/api/upload", uploadRoutes);
+  app.use("/api/messages", require("./routes/messages"));
+  app.use("/api/account", require("./routes/account"));
+  app.use("/api/notifications", require("./routes/notifications"));
+  app.use("/api/alumni", require("./routes/alumni"));
+
+  // ------------------
+  // ❌ ERROR HANDLERS (VERY IMPORTANT ORDER)
+  // ------------------
+  app.use(notFound);      // 404 handler
+  app.use(errorHandler); // global error handler
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 };
 

@@ -24,6 +24,19 @@ const IMAGE_CACHE_NAME = 'college-media-images-v1';
 const MAX_API_CACHE = 50;
 const MAX_IMAGE_CACHE = 100;
 
+// Helper function to limit cache size
+const limitCacheSize = (cacheName, maxItems) => {
+  caches.open(cacheName).then(cache => {
+    cache.keys().then(keys => {
+      if (keys.length > maxItems) {
+        cache.delete(keys[0]).then(() => {
+          limitCacheSize(cacheName, maxItems);
+        });
+      }
+    });
+  });
+};
+
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
   console.log('Service Worker installing...');

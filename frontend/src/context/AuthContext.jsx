@@ -16,18 +16,23 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [token, setToken] = useState(localStorage.getItem("token"));
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
+    console.log("🔍 AuthContext: Checking token...", storedToken ? "Token found" : "No token");
     if (storedToken) {
       fetchUserData(storedToken);
     } else {
       setLoading(false);
+      setIsInitialized(true);
     }
   }, []);
 
   const fetchUserData = async (token) => {
+    console.log("🔐 AuthContext: Fetching user data...");
     try {
+      setLoading(true);
       setError(null);
       const response = await fetch(
         `${
@@ -38,15 +43,18 @@ export const AuthProvider = ({ children }) => {
         }
       );
 
+      console.log("📡 AuthContext: Profile response status:", response.status);
+
       if (!response.ok) {
         throw new Error("Session expired. Please login again.");
       }
 
       const data = await response.json();
+      console.log("✅ AuthContext: User data loaded successfully");
       setUser(data.data);
       setToken(token);
     } catch (err) {
-      console.error(err);
+      console.error("❌ AuthContext: Error fetching user data:", err);
       localStorage.removeItem("token");
       setToken(null);
       setUser(null);
@@ -58,6 +66,8 @@ export const AuthProvider = ({ children }) => {
       }
     } finally {
       setLoading(false);
+      setIsInitialized(true);
+      console.log("🏁 AuthContext: Loading complete");
     }
   };
 

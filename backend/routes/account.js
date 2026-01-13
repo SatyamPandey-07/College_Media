@@ -341,4 +341,96 @@ router.post('/export-data', verifyToken, sensitiveLimiter, async (req, res) => {
   }
 });
 
+/* =====================================================
+   GET USER SETTINGS
+===================================================== */
+router.get('/settings', verifyToken, async (req, res) => {
+  try {
+    const { useMongoDB } = req.app.get('dbConnection');
+
+    const user = useMongoDB
+      ? await UserMongo.findById(req.userId).select('settings')
+      : await UserMock.findById(req.userId);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Return default settings if none exist
+    const settings = user.settings || {
+      fontSize: 'medium',
+      theme: 'auto',
+      notifications: {
+        email: true,
+        push: true,
+        inApp: true
+      },
+      privacy: {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false
+      }
+    };
+
+    res.json({
+      success: true,
+      data: settings
+    });
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    res.status(500).json({ success: false, message: 'Error fetching settings' });
+  }
+});
+
+/* =====================================================
+   UPDATE USER SETTINGS
+===================================================== */
+router.put('/settings', verifyToken, async (req, res) => {
+  try {
+    const { useMongoDB } = req.app.get('dbConnection');
+    const { fontSize, theme, notifications, privacy } = req.body;
+
+    const updateData = {};
+    if (fontSize) updateData['settings.fontSize'] = fontSize;
+    if (theme) updateData['settings.theme'] = theme;
+    if (notifications) updateData['settings.notifications'] = notifications;
+    if (privacy) updateData['settings.privacy'] = privacy;
+
+    if (useMongoDB) {
+      const user = await UserMongo.findByIdAndUpdate(
+        req.userId,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      ).select('settings');
+
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      res.json({
+        success: true,
+        data: user.settings,
+        message: 'Settings updated successfully'
+      });
+    } else {
+      const user = await UserMock.findById(req.userId);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      user.settings = { ...user.settings, ...req.body };
+      await UserMock.update(req.userId, user);
+
+      res.json({
+        success: true,
+        data: user.settings,
+        message: 'Settings updated successfully'
+      });
+    }
+  } catch (error) {
+    console.error('Error updating settings:', error);
+    res.status(500).json({ success: false, message: 'Error updating settings' });
+  }
+});
+
 module.exports = router;
