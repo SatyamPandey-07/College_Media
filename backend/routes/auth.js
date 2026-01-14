@@ -213,24 +213,84 @@ router.post(
 /* ============================================================
    🔐 2FA VERIFY LOGIN
 ============================================================ */
+const MFAService = require("../services/mfaService");
+
+/* ============================================================
+   🔐 2FA SETUP (GENERATE QR)
+   ============================================================ */
+router.post("/2fa/setup", verifyToken, async (req, res, next) => {
+  try {
+    const user = await UserMongo.findById(req.userId);
+    const { secret, qrCodeUrl } = await MFAService.generateSecret(user._id, user.email);
+
+    // We don't save secret yet, client must verify first
+    res.json({
+      success: true,
+      secret,
+      qrCodeUrl
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ============================================================
+   ✅ 2FA ENABLE (VERIFY & SAVE)
+   ============================================================ */
+router.post("/2fa/enable", verifyToken, async (req, res, next) => {
+  try {
+    const { secret, token } = req.body;
+    const { backupCodes } = await MFAService.enableMFA(req.userId, secret, token);
+
+    res.json({
+      success: true,
+      message: "2FA enabled successfully",
+      backupCodes
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+/* ============================================================
+   🚫 2FA DISABLE
+   ============================================================ */
+router.post("/2fa/disable", verifyToken, async (req, res, next) => {
+  try {
+    const { token } = req.body; // Require OTP to disable
+    const user = await UserMongo.findById(req.userId).select('+twoFactorSecret');
+
+    const isValid = MFAService.verifyToken(token, user.twoFactorSecret);
+    if (!isValid) return res.status(401).json({ success: false, message: "Invalid token" });
+
+    await UserMongo.findByIdAndUpdate(req.userId, {
+      twoFactorEnabled: false,
+      twoFactorSecret: undefined,
+      backupCodes: []
+    });
+
+    res.json({ success: true, message: "2FA disabled" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ============================================================
+   🔐 2FA VERIFY LOGIN (OTP OR BACKUP CODE)
+   ============================================================ */
 router.post("/2fa/verify-login", async (req, res, next) => {
   try {
     const { userId, token } = req.body;
 
-    const user = await UserMongo.findById(userId);
+    const user = await UserMongo.findById(userId).select('+twoFactorSecret +backupCodes');
     if (!user || !user.twoFactorEnabled) {
-      return res.status(400).json({ success: false });
+      return res.status(400).json({ success: false, message: "2FA not enabled" });
     }
 
-    const verified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret,
-      encoding: "base32",
-      token,
-      window: 2,
-    });
+    const isAuthenticated = await MFAService.authenticate(user, token);
 
-    if (!verified) {
-      return res.status(401).json({ success: false });
+    if (!isAuthenticated) {
+      return res.status(401).json({ success: false, message: "Invalid code" });
     }
 
     await revokeOldSessions(user._id);
