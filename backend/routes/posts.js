@@ -6,6 +6,7 @@ const User = require('../models/User');
 const ModerationService = require('../services/moderationService');
 const RecommenderService = require('../services/recommender');
 const EventPublisher = require('../events/publisher');
+const AIModerator = require('../services/aiModerator');
 const logger = require('../utils/logger');
 const { apiLimiter } = require('../middleware/rateLimitMiddleware');
 const { checkPermission, PERMISSIONS } = require('../middleware/rbacMiddleware');
@@ -100,10 +101,7 @@ router.post('/', verifyToken, apiLimiter, async (req, res) => {
     try {
         const { content, tags, visibility, images } = req.body;
 
-        // Check content safety asynchronously
-        ModerationService.checkAndFlag(content, 'Post', null, req.userId).catch(err =>
-            logger.error('Content safety check failed:', err)
-        );
+
 
         const post = await Post.create({
             author: req.userId,
@@ -112,6 +110,9 @@ router.post('/', verifyToken, apiLimiter, async (req, res) => {
             visibility,
             images
         });
+
+        // Trigger AI Moderation Scan
+        AIModerator.scan(post._id, 'Post', content, images && images.length > 0 ? images[0] : null);
 
         // Update targetId for content safety check
         ModerationService.checkAndFlag(content, 'Post', post._id, req.userId);
