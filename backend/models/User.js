@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const PointSchema = require('./Location');
 
 const userSchema = new mongoose.Schema({
   username: {
@@ -59,7 +60,13 @@ const userSchema = new mongoose.Schema({
     deviceName: String,
     userAgent: String,
     lastUsed: Date
-  }]
+  }],
+
+  // Location
+  lastLocation: {
+    type: PointSchema,
+    default: undefined
+  }
 
 }, {
   timestamps: true,
@@ -97,6 +104,9 @@ userSchema.index({ githubId: 1 }, { name: "idx_github_oauth_users", sparse: true
 
 // Two-factor enabled users
 userSchema.index({ twoFactorEnabled: 1 }, { name: "idx_users_2fa_enabled" });
+
+// Geospatial Index
+userSchema.index({ lastLocation: "2dsphere" }, { name: "idx_geo_users" });
 
 // Text search
 userSchema.index(

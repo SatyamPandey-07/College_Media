@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const PointSchema = require('./Location');
 
 /* ============================================================
    📌 POST SCHEMA
@@ -109,10 +110,8 @@ const postSchema = new mongoose.Schema(
        📍 LOCATION
     ------------------------- */
     location: {
-      name: String,
-      coordinates: {
-        type: [Number] // [lng, lat]
-      }
+      type: PointSchema,
+      default: undefined
     },
 
     /* -------------------------
@@ -207,7 +206,7 @@ postSchema.index(
 ------------------------- */
 
 postSchema.index(
-  { "location.coordinates": "2dsphere" },
+  { location: "2dsphere" },
   { name: "idx_geo_posts" }
 );
 
