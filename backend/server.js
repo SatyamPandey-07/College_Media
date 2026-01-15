@@ -38,6 +38,7 @@ const { initDB } = require("./config/db");
 const { notFound } = require("./middleware/errorMiddleware");
 const logger = require("./utils/logger");
 const liveStreamService = require("./services/liveStreamService");
+const initMongoSync = require("./listeners/mongoSync");
 
 const resumeRoutes = require("./routes/resume");
 const uploadRoutes = require("./routes/upload");
@@ -286,6 +287,7 @@ const startServer = async () => {
 
   // Start Broadcasting Service
   liveStreamService.start();
+  initMongoSync();
 
   const apolloServer = new ApolloServer({
     typeDefs,
