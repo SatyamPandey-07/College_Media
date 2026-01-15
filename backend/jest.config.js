@@ -16,9 +16,9 @@ module.exports = {
     // Ensure we don't try to test frontend files if they exist in same repo structure
     testMatch: ['**/backend/tests/**/*.test.js'],
     setupFilesAfterEnv: ['./tests/setup.js'],
+    // Load test environment variables
+    setupFiles: ['dotenv/config'],
     testEnvironmentOptions: {
         NODE_ENV: 'test'
-    },
-    // Mock external services
-    setupFiles: ['./tests/mocks/external-services.js']
+    }
 };
