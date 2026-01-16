@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const scheduler = require('../jobs/scheduler');
 const { checkPermission, PERMISSIONS } = require('../middleware/rbacMiddleware');
 const logger = require('../utils/logger');
+const AnalyticsService = require('../services/analyticsService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'college_media_secret_key';
 
@@ -40,6 +41,36 @@ router.get('/tasks', verifyToken, checkPermission(PERMISSIONS.MANAGE_SETTINGS), 
     } catch (error) {
         logger.error('Get tasks error:', error);
         res.status(500).json({ success: false, message: 'Failed to get tasks' });
+    }
+});
+
+/**
+ * @swagger
+ * /api/admin/analytics:
+ *   get:
+ *     summary: Get system analytics
+ *     tags: [Admin]
+ */
+router.get('/analytics', verifyToken, checkPermission(PERMISSIONS.MANAGE_SETTINGS), async (req, res) => {
+    try {
+        const [growth, engagement, heatmap] = await Promise.all([
+            AnalyticsService.getUserGrowth('day'),
+            AnalyticsService.getEngagementStats(),
+            AnalyticsService.getActivityHeatmap()
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                userGrowth: growth,
+                engagement: engagement,
+                heatmap: heatmap
+            },
+            message: 'Analytics retrieved'
+        });
+    } catch (error) {
+        logger.error('Analytics Error:', error);
+        res.status(500).json({ success: false, message: 'Failed to generate analytics' });
     }
 });
 
@@ -107,7 +138,6 @@ router.post('/tasks/:name/disable', verifyToken, checkPermission(PERMISSIONS.MAN
 });
 
 // ============== ANALYTICS ENDPOINTS ==============
-const AnalyticsService = require('../services/analyticsService');
 
 /**
  * @swagger
