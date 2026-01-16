@@ -60,3 +60,31 @@ export interface Notification {
     timestamp: string;
     message?: string;
 }
+
+export interface AnalyticsStats {
+    overview: {
+        totalLikes: number;
+        totalViews: number;
+        totalComments: number;
+        totalShares: number;
+    };
+    engagementOverTime: {
+        _id: string; // Date string
+        likes: number;
+    }[];
+    topPosts: PerformancePost[];
+}
+
+export interface PerformancePost {
+    _id: string;
+    caption: string;
+    likesCount: number;
+    commentsCount: number;
+    createdAt: string;
+}
+
+export interface TagAnalytics {
+    _id: string; // Tag name
+    count: number;
+    avgLikes: number;
+}

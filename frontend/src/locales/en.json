@@ -108,6 +108,7 @@
         "trending": "Trending",
         "explore": "Explore",
         "pricing": "Pricing",
+        "analytics": "Analytics",
         "stories": "Stories",
         "learning": "Learning",
         "reels": "Reels",
@@ -174,5 +175,26 @@
         "post": "Post",
         "error": "Failed to post comment. Please try again.",
         "views": "views"
+    },
+    "analytics": {
+        "dashboardTitle": "Engagement Analytics",
+        "dashboardSubtitle": "Track your performance and reach across the platform",
+        "last30Days": "Last 30 Days",
+        "last90Days": "Last 90 Days",
+        "totalViews": "Profile Views",
+        "totalLikes": "Post Likes",
+        "totalComments": "Comments",
+        "totalShares": "Shares",
+        "engagementTend": "Engagement Trend",
+        "topPerformingPosts": "Top Performing Posts",
+        "topTags": "Highly Engaged Tags",
+        "viewAll": "View All",
+        "post": "Post",
+        "engagement": "Engagement",
+        "date": "Date",
+        "likes": "Likes",
+        "noData": "No engagement data available for this period",
+        "noTags": "No tags found in your posts",
+        "errorLoading": "Failed to load analytics"
     }
 }

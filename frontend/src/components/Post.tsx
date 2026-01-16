@@ -7,6 +7,7 @@ import { usePollByPost } from "../hooks/usePolls";
 import ProgressiveImage from "./ProgressiveImage";
 import useOptimisticUpdate from "../hooks/useOptimisticUpdate";
 import { Post as IPost } from "../types";
+import { useAnalytics } from "../hooks/useAnalytics";
 
 interface PostProps {
   post: IPost;
@@ -24,6 +25,11 @@ const Post: React.FC<PostProps> = ({
   const { t } = useTranslation();
   const [showMenu, setShowMenu] = useState(false);
   const { poll, hasPoll } = usePollByPost(post.id);
+  const { trackEvent } = useAnalytics();
+
+  React.useEffect(() => {
+    trackEvent('post_view', post.id);
+  }, [post.id]);
 
   // Optimistic update for likes
   const { data: likes, isUpdating: isLiking, optimisticUpdate: updateLike } = useOptimisticUpdate({
@@ -40,7 +46,13 @@ const Post: React.FC<PostProps> = ({
 
   const handleLikeClick = () => {
     // Toggle liked state optimistically
-    post.liked = !post.liked;
+    const isLiking = !post.liked;
+    post.liked = isLiking;
+
+    if (isLiking) {
+      trackEvent('like', post.id);
+    }
+
     updateLike();
   };
 
