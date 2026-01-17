@@ -54,48 +54,13 @@ export interface Comment {
 }
 
 export interface Notification {
-    _id: string;
-    id?: string;
-    recipient: string;
-    sender: User;
-    actor?: User; // Backward compatibility
-    type: 'like' | 'comment' | 'follow' | 'mention' | 'message' | 'share' | 'reply';
-    post?: Post;
-    targetId?: string; // Backward compatibility
-    comment?: string | Comment;
-    content?: string;
-    message?: string; // Backward compatibility
+    id: string;
+    type: 'like' | 'comment' | 'follow' | 'mention' | 'share' | 'reply';
+    actor: User;
+    targetId: string; // post id, comment id, etc.
     isRead: boolean;
-    createdAt: string;
-    timestamp?: string; // Backward compatibility
-}
-
-export interface AnalyticsStats {
-    overview: {
-        totalLikes: number;
-        totalViews: number;
-        totalComments: number;
-        totalShares: number;
-    };
-    engagementOverTime: {
-        _id: string; // Date string
-        likes: number;
-    }[];
-    topPosts: PerformancePost[];
-}
-
-export interface PerformancePost {
-    _id: string;
-    caption: string;
-    likesCount: number;
-    commentsCount: number;
-    createdAt: string;
-}
-
-export interface TagAnalytics {
-    _id: string; // Tag name
-    count: number;
-    avgLikes: number;
+    timestamp: string;
+    message?: string;
 }
 
 export interface Collection {
