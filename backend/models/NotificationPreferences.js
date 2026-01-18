@@ -1,6 +1,8 @@
 /**
- * NotificationPreferences Model
- * User-specific notification preferences for each channel and type
+ * Notification Preferences Model
+ * Issue #964: Advanced Multi-Channel Notification System
+ * 
+ * User settings for notification channels and categories.
  */
 
 const mongoose = require('mongoose');
@@ -13,189 +15,132 @@ const notificationPreferencesSchema = new mongoose.Schema({
     unique: true,
     index: true
   },
-  // Global preferences
-  globalEnabled: {
-    type: Boolean,
-    default: true
-  },
-  soundEnabled: {
-    type: Boolean,
-    default: true
-  },
-  // Channel preferences
+
+  // Channels enable/disable
   channels: {
+    email: {
+      enabled: { type: Boolean, default: true },
+      address: String // Override primary email if needed
+    },
+    push: {
+      enabled: { type: Boolean, default: true }
+    },
     inApp: {
       enabled: { type: Boolean, default: true }
     },
-    email: {
-      enabled: { type: Boolean, default: true },
-      frequency: {
-        type: String,
-        enum: ['realtime', 'hourly', 'daily', 'weekly', 'never'],
-        default: 'daily'
-      }
-    },
-    push: {
-      enabled: { type: Boolean, default: true },
-      devices: [{
-        deviceId: String,
-        token: String,
-        platform: {
-          type: String,
-          enum: ['ios', 'android', 'web']
-        },
-        addedAt: {
-          type: Date,
-          default: Date.now
-        }
-      }]
+    sms: {
+      enabled: { type: Boolean, default: false },
+      phoneNumber: String
     }
   },
-  // Type-specific preferences
-  types: {
-    like: {
-      inApp: { type: Boolean, default: true },
+
+  // Categories fine-tuning per channel
+  categories: {
+    social: {
+      email: { type: Boolean, default: true },
+      push: { type: Boolean, default: true },
+      inApp: { type: Boolean, default: true }
+    },
+    content: {
       email: { type: Boolean, default: false },
-      push: { type: Boolean, default: true }
+      push: { type: Boolean, default: true },
+      inApp: { type: Boolean, default: true }
     },
-    comment: {
-      inApp: { type: Boolean, default: true },
+    messaging: {
       email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
+      push: { type: Boolean, default: true },
+      inApp: { type: Boolean, default: true }
     },
-    reply: {
-      inApp: { type: Boolean, default: true },
+    events: {
       email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
-    },
-    mention: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
-    },
-    follow: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: false },
-      push: { type: Boolean, default: true }
-    },
-    message: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
-    },
-    event: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
-    },
-    event_reminder: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
+      push: { type: Boolean, default: true },
+      inApp: { type: Boolean, default: true }
     },
     system: {
-      inApp: { type: Boolean, default: true },
       email: { type: Boolean, default: true },
-      push: { type: Boolean, default: false }
+      push: { type: Boolean, default: true },
+      inApp: { type: Boolean, default: true }
     },
-    admin: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
-    },
-    group_invite: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
-    },
-    study_match: {
-      inApp: { type: Boolean, default: true },
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true }
-    },
-    achievement: {
-      inApp: { type: Boolean, default: true },
+    marketing: {
       email: { type: Boolean, default: false },
-      push: { type: Boolean, default: true }
+      push: { type: Boolean, default: false },
+      inApp: { type: Boolean, default: true }
     }
   },
-  // Quiet hours
-  quietHours: {
-    enabled: { type: Boolean, default: false },
-    start: { type: String, default: '22:00' }, // HH:MM format
-    end: { type: String, default: '08:00' },
-    timezone: { type: String, default: 'UTC' }
-  },
+
   // Digest settings
   digest: {
-    enabled: { type: Boolean, default: false },
     frequency: {
       type: String,
-      enum: ['daily', 'weekly'],
-      default: 'weekly'
+      enum: ['daily', 'weekly', 'never'],
+      default: 'daily'
     },
-    time: { type: String, default: '09:00' }, // HH:MM format
-    dayOfWeek: { type: Number, default: 1 } // 0=Sunday, 1=Monday, etc.
+    time: { type: String, default: '09:00' }, // HH:mm format
+    dayOfWeek: { type: Number, default: 1 } // 0-6 (Sun-Sat) for weekly
+  },
+
+  // Push subscriptions (Web Push API)
+  pushSubscriptions: [{
+    endpoint: String,
+    expirationTime: Date,
+    keys: {
+      p256dh: String,
+      auth: String
+    },
+    deviceType: String,
+    browser: String,
+    lastUsed: Date,
+    createdAt: { type: Date, default: Date.now }
+  }],
+
+  // Quiet hours (Do Not Disturb)
+  quietHours: {
+    enabled: { type: Boolean, default: false },
+    startTime: { type: String, default: '22:00' },
+    endTime: { type: String, default: '08:00' },
+    timezone: { type: String, default: 'UTC' }
   }
+
 }, {
   timestamps: true
 });
 
-// Methods
-notificationPreferencesSchema.methods.isChannelEnabled = function(type, channel) {
-  if (!this.globalEnabled) return false;
+// Helper to check if notification should be sent
+notificationPreferencesSchema.methods.shouldSend = function (channel, category) {
+  // Check master channel switch
   if (!this.channels[channel]?.enabled) return false;
-  if (!this.types[type]) return true; // Default to enabled for unknown types
-  return this.types[type][channel] !== false;
-};
 
-notificationPreferencesSchema.methods.addDevice = async function(deviceInfo) {
-  const existingDevice = this.channels.push.devices.find(
-    d => d.deviceId === deviceInfo.deviceId
-  );
-  
-  if (existingDevice) {
-    existingDevice.token = deviceInfo.token;
-    existingDevice.platform = deviceInfo.platform;
-  } else {
-    this.channels.push.devices.push(deviceInfo);
+  // Check specific category setting
+  if (this.categories[category] && this.categories[category][channel] !== undefined) {
+    return this.categories[category][channel];
   }
-  
-  return await this.save();
+
+  return true;
 };
 
-notificationPreferencesSchema.methods.removeDevice = async function(deviceId) {
-  this.channels.push.devices = this.channels.push.devices.filter(
-    d => d.deviceId !== deviceId
-  );
-  return await this.save();
-};
-
-notificationPreferencesSchema.methods.isInQuietHours = function() {
+// Helper to check quiet hours
+notificationPreferencesSchema.methods.isInQuietHours = function () {
   if (!this.quietHours.enabled) return false;
-  
-  const now = new Date();
-  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-  
-  const { start, end } = this.quietHours;
-  
-  // Handle quiet hours that span midnight
-  if (start > end) {
-    return currentTime >= start || currentTime < end;
-  }
-  
-  return currentTime >= start && currentTime < end;
-};
 
-// Statics
-notificationPreferencesSchema.statics.getOrCreate = async function(userId) {
-  let prefs = await this.findOne({ user: userId });
-  
-  if (!prefs) {
-    prefs = await this.create({ user: userId });
+  const now = new Date();
+
+  // Basic implementation - needs actual timezone handling in production
+  const currentHour = now.getUTCHours();
+  const currentMinute = now.getUTCMinutes();
+
+  const [startHour, startMinute] = this.quietHours.startTime.split(':').map(Number);
+  const [endHour, endMinute] = this.quietHours.endTime.split(':').map(Number);
+
+  const currentTime = currentHour * 60 + currentMinute;
+  const startTime = startHour * 60 + startMinute;
+  const endTime = endHour * 60 + endMinute;
+
+  if (startTime < endTime) {
+    return currentTime >= startTime && currentTime < endTime;
+  } else {
+    // Crosses midnight
+    return currentTime >= startTime || currentTime < endTime;
   }
-  
-  return prefs;
 };
 
 const NotificationPreferences = mongoose.model('NotificationPreferences', notificationPreferencesSchema);

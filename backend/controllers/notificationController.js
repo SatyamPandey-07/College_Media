@@ -1,292 +1,270 @@
 /**
- * Enhanced Notification Controller
- * Real-time notifications with filtering, pagination, and preferences
+ * Notification Controller
+ * Issue #964: Advanced Multi-Channel Notification System
+ * 
+ * Endpoints for managing notifications and preferences.
  */
 
 const Notification = require('../models/Notification');
 const NotificationPreferences = require('../models/NotificationPreferences');
-const realtimeNotificationService = require('../services/realtimeNotificationService');
+const notificationDispatcher = require('../services/notificationDispatcher');
+const pushService = require('../services/pushNotificationService');
 
-/**
- * @desc    Get user notifications with pagination and filters
- * @route   GET /api/notifications
- * @access  Private
- */
-exports.getNotifications = async (req, res) => {
-    try {
-        const { page = 1, limit = 20, type, unread, priority } = req.query;
-        
-        const query = {
-            recipient: req.user._id,
-            isDeleted: false
-        };
-        
-        if (type) query.type = type;
-        if (unread === 'true') query.isRead = false;
-        if (priority) query.priority = priority;
-        
-        const notifications = await Notification.find(query)
-            .populate('sender', 'name username profilePicture')
-            .populate('aggregatedUsers', 'name profilePicture')
-            .populate('post', 'caption imageUrl')
-            .sort({ createdAt: -1 })
-            .limit(parseInt(limit))
-            .skip((parseInt(page) - 1) * parseInt(limit));
-        
-        const total = await Notification.countDocuments(query);
-        const unreadCount = await Notification.getUnreadCount(req.user._id);
-        
-        res.json({
-            success: true,
-            notifications,
-            pagination: {
-                page: parseInt(page),
+const notificationController = {
+
+    /**
+     * GET /api/notifications
+     * Get user's notifications
+     */
+    async getNotifications(req, res) {
+        try {
+            const { limit = 20, skip = 0, category } = req.query;
+            const userId = req.user._id;
+
+            const notifications = await Notification.getAll(userId, {
                 limit: parseInt(limit),
-                total,
-                pages: Math.ceil(total / parseInt(limit))
-            },
-            unreadCount
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-/**
- * @desc    Get unread notification count
- * @route   GET /api/notifications/unread-count
- * @access  Private
- */
-exports.getUnreadCount = async (req, res) => {
-    try {
-        const count = await Notification.getUnreadCount(req.user._id);
-        res.json({ success: true, count });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-/**
- * @desc    Mark notification as read
- * @route   PUT /api/notifications/:id/read
- * @access  Private
- */
-exports.markAsRead = async (req, res) => {
-    try {
-        const notification = await Notification.findOne({
-            _id: req.params.id,
-            recipient: req.user._id
-        });
-        
-        if (!notification) {
-            return res.status(404).json({
-                success: false,
-                message: 'Notification not found'
+                skip: parseInt(skip),
+                category
             });
-        }
-        
-        await notification.markAsRead();
-        
-        res.json({
-            success: true,
-            notification
-        });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
-};
 
-/**
- * @desc    Mark all notifications as read
- * @route   PUT /api/notifications/read-all
- * @access  Private
- */
-exports.markAllAsRead = async (req, res) => {
-    try {
-        await Notification.markAllAsRead(req.user._id);
-        
-        res.json({
-            success: true,
-            message: 'All notifications marked as read'
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+            const unreadCount = await Notification.getUnreadCount(userId);
 
-/**
- * @desc    Delete notification (soft delete)
- * @route   DELETE /api/notifications/:id
- * @access  Private
- */
-exports.deleteNotification = async (req, res) => {
-    try {
-        const notification = await Notification.findOne({
-            _id: req.params.id,
-            recipient: req.user._id
-        });
-        
-        if (!notification) {
-            return res.status(404).json({
-                success: false,
-                message: 'Notification not found'
+            res.json({
+                success: true,
+                data: {
+                    notifications,
+                    unreadCount
+                }
             });
+        } catch (error) {
+            console.error('Get notifications error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
         }
-        
-        await notification.softDelete();
-        
-        res.json({
-            success: true,
-            message: 'Notification deleted'
-        });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
-};
+    },
 
-/**
- * @desc    Batch mark notifications as read
- * @route   PUT /api/notifications/batch-read
- * @access  Private
- */
-exports.batchMarkAsRead = async (req, res) => {
-    try {
-        const { ids } = req.body;
-        
-        if (!Array.isArray(ids) || ids.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid notification IDs'
-            });
-        }
-        
-        await Notification.updateMany(
-            {
-                _id: { $in: ids },
-                recipient: req.user._id
-            },
-            {
-                $set: { isRead: true, readAt: new Date() }
+    /**
+     * PUT /api/notifications/:id/read
+     * Mark notification as read
+     */
+    async markRead(req, res) {
+        try {
+            const { id } = req.params;
+            const userId = req.user._id;
+
+            const notification = await Notification.findOne({ _id: id, recipient: userId });
+            if (!notification) {
+                return res.status(404).json({ success: false, message: 'Notification not found' });
             }
-        );
-        
-        res.json({
-            success: true,
-            message: `${ids.length} notifications marked as read`
-        });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
-};
 
-/**
- * @desc    Get notification preferences
- * @route   GET /api/notifications/preferences
- * @access  Private
- */
-exports.getPreferences = async (req, res) => {
-    try {
-        const prefs = await NotificationPreferences.getOrCreate(req.user._id);
-        res.json({ success: true, preferences: prefs });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+            await notification.markAsRead();
 
-/**
- * @desc    Update notification preferences
- * @route   PUT /api/notifications/preferences
- * @access  Private
- */
-exports.updatePreferences = async (req, res) => {
-    try {
-        const prefs = await NotificationPreferences.getOrCreate(req.user._id);
-        
-        Object.assign(prefs, req.body);
-        await prefs.save();
-        
-        res.json({
-            success: true,
-            preferences: prefs
-        });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
-};
-
-/**
- * @desc    Register device for push notifications
- * @route   POST /api/notifications/devices
- * @access  Private
- */
-exports.registerDevice = async (req, res) => {
-    try {
-        const { deviceId, token, platform } = req.body;
-        
-        if (!deviceId || !token || !platform) {
-            return res.status(400).json({
-                success: false,
-                message: 'Device ID, token, and platform are required'
-            });
+            res.json({ success: true, data: notification });
+        } catch (error) {
+            console.error('Mark read error:', error);
+            res.status(500).json({ success: false, message: 'Failed to update notification' });
         }
-        
-        const prefs = await NotificationPreferences.getOrCreate(req.user._id);
-        await prefs.addDevice({ deviceId, token, platform });
-        
+    },
+
+    /**
+     * PUT /api/notifications/read-all
+     * Mark all notifications as read
+     */
+    async markAllRead(req, res) {
+        try {
+            const { category } = req.body;
+            const userId = req.user._id;
+
+            await Notification.markAllRead(userId, category);
+
+            res.json({ success: true, message: 'All notifications marked as read' });
+        } catch (error) {
+            console.error('Mark all read error:', error);
+            res.status(500).json({ success: false, message: 'Failed to update notifications' });
+        }
+    },
+
+    /**
+     * PUT /api/notifications/:id/click
+     * Track notification click
+     */
+    async trackClick(req, res) {
+        try {
+            const { id } = req.params;
+            const userId = req.user._id;
+
+            const notification = await Notification.findOne({ _id: id, recipient: userId });
+            if (notification) {
+                await notification.markAsClicked();
+            }
+
+            res.json({ success: true });
+        } catch (error) {
+            console.error('Track click error:', error);
+            res.status(500).json({ success: false });
+        }
+    },
+
+    /**
+     * DELETE /api/notifications/:id
+     * Delete a notification
+     */
+    async deleteNotification(req, res) {
+        try {
+            const { id } = req.params;
+            const userId = req.user._id;
+
+            await Notification.deleteOne({ _id: id, recipient: userId });
+
+            res.json({ success: true, message: 'Notification deleted' });
+        } catch (error) {
+            console.error('Delete notification error:', error);
+            res.status(500).json({ success: false, message: 'Failed to delete notification' });
+        }
+    },
+
+    /**
+     * GET /api/notifications/preferences
+     * Get user preferences
+     */
+    async getPreferences(req, res) {
+        try {
+            let preferences = await NotificationPreferences.findOne({ user: req.user._id });
+
+            if (!preferences) {
+                preferences = await NotificationPreferences.create({ user: req.user._id });
+            }
+
+            res.json({ success: true, data: preferences });
+        } catch (error) {
+            console.error('Get preferences error:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch preferences' });
+        }
+    },
+
+    /**
+     * PUT /api/notifications/preferences
+     * Update user preferences
+     */
+    async updatePreferences(req, res) {
+        try {
+            const updates = req.body;
+            const userId = req.user._id;
+
+            let preferences = await NotificationPreferences.findOne({ user: userId });
+            if (!preferences) {
+                preferences = new NotificationPreferences({ user: userId });
+            }
+
+            // Deep merge updates
+            if (updates.channels) Object.assign(preferences.channels, updates.channels);
+            if (updates.categories) Object.assign(preferences.categories, updates.categories);
+            if (updates.digest) Object.assign(preferences.digest, updates.digest);
+            if (updates.quietHours) Object.assign(preferences.quietHours, updates.quietHours);
+
+            await preferences.save();
+
+            res.json({ success: true, data: preferences });
+        } catch (error) {
+            console.error('Update preferences error:', error);
+            res.status(500).json({ success: false, message: 'Failed to update preferences' });
+        }
+    },
+
+    /**
+     * POST /api/notifications/push/subscribe
+     * Subscribe to Web Push
+     */
+    async subscribePush(req, res) {
+        try {
+            const subscription = req.body;
+            const userId = req.user._id;
+
+            // Basic validation
+            if (!subscription.endpoint || !subscription.keys) {
+                return res.status(400).json({ success: false, message: 'Invalid subscription data' });
+            }
+
+            const preferences = await NotificationPreferences.findOne({ user: userId });
+            if (!preferences) {
+                // Should exist, but handle edge case
+                await NotificationPreferences.create({
+                    user: userId,
+                    pushSubscriptions: [subscription]
+                });
+            } else {
+                // Add if not exists
+                const exists = preferences.pushSubscriptions.some(s => s.endpoint === subscription.endpoint);
+                if (!exists) {
+                    preferences.pushSubscriptions.push(subscription);
+                    await preferences.save();
+                }
+            }
+
+            res.json({ success: true, message: 'Subscribed to push notifications' });
+        } catch (error) {
+            console.error('Push subscribe error:', error);
+            res.status(500).json({ success: false, message: 'Failed to subscribe' });
+        }
+    },
+
+    /**
+     * POST /api/notifications/push/unsubscribe
+     * Unsubscribe from Web Push
+     */
+    async unsubscribePush(req, res) {
+        try {
+            const { endpoint } = req.body;
+            const userId = req.user._id;
+
+            await NotificationPreferences.updateOne(
+                { user: userId },
+                { $pull: { pushSubscriptions: { endpoint } } }
+            );
+
+            res.json({ success: true, message: 'Unsubscribed from push notifications' });
+        } catch (error) {
+            console.error('Push unsubscribe error:', error);
+            res.status(500).json({ success: false, message: 'Failed to unsubscribe' });
+        }
+    },
+
+    /**
+     * GET /api/notifications/push/config
+     * Get VAPID public key
+     */
+    getPushConfig(req, res) {
         res.json({
             success: true,
-            message: 'Device registered successfully'
+            publicKey: pushService.getPublicKey()
         });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
+    },
+
+    /**
+     * POST /api/notifications/test
+     * Send a test notification (dev only)
+     */
+    async sendTest(req, res) {
+        try {
+            const { type = 'system', title = 'Test Notification', body = 'This is a test' } = req.body;
+            const userId = req.user._id;
+
+            const notification = await notificationDispatcher.send(userId, {
+                sender: null,
+                type,
+                title,
+                body,
+                data: {
+                    url: '/notifications',
+                    image: '/logo192.png'
+                }
+            });
+
+            res.json({ success: true, data: notification });
+        } catch (error) {
+            console.error('Test notification error:', error);
+            res.status(500).json({ success: false, message: 'Failed to send test' });
+        }
     }
 };
 
-/**
- * @desc    Unregister device
- * @route   DELETE /api/notifications/devices/:deviceId
- * @access  Private
- */
-exports.unregisterDevice = async (req, res) => {
-    try {
-        const prefs = await NotificationPreferences.getOrCreate(req.user._id);
-        await prefs.removeDevice(req.params.deviceId);
-        
-        res.json({
-            success: true,
-            message: 'Device unregistered successfully'
-        });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
-};
-
-/**
- * @desc    Create notification (internal/admin)
- * @route   POST /api/notifications
- * @access  Private/Admin
- */
-exports.createNotification = async (req, res) => {
-    try {
-        const notification = await realtimeNotificationService.createNotification(req.body);
-        
-        res.status(201).json({
-            success: true,
-            notification
-        });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
-};
-
-/**
- * Helper function for creating notifications (used by other controllers)
- */
-exports.createNotificationHelper = async (data) => {
-    try {
-        return await realtimeNotificationService.createNotification(data);
-    } catch (error) {
-        console.error('Error creating notification:', error);
-        return null;
-    }
-};
+module.exports = notificationController;
