@@ -1,186 +1,266 @@
 /**
- * ============================================================
- * REQUEST ID MIDDLEWARE
- * ------------------------------------------------------------
- * ✔ Generates unique Request ID per request
- * ✔ Accepts upstream request-id if provided
- * ✔ Attaches requestId to:
- *    - req object
- *    - response headers
- *    - logs
- * ✔ Async safe (no collision)
- * ✔ Production hardened
- * ✔ ECWoC-ready (300+ lines)
- * ============================================================
+ * RBAC Middleware
+ * Issue #935: Multi-Tenant Architecture with RBAC
+ * 
+ * Enhanced middleware with tenant-aware permission checks.
  */
 
-const crypto = require("crypto");
-
-/* ============================================================
-   🧠 CONFIGURATION
-============================================================ */
-
-const REQUEST_ID_HEADER = "x-request-id";
-const RESPONSE_HEADER = "x-request-id";
-
-const REQUEST_ID_CONFIG = Object.freeze({
-  BYTE_LENGTH: 16,
-  PREFIX: "req",
-  ENABLE_LOGGING: true,
-});
-
-/* ============================================================
-   🧮 UTILITY FUNCTIONS
-============================================================ */
+const { hasPermission, getPermissions, PERMISSIONS, TENANT_ROLES, SYSTEM_ROLES } = require('../config/roles');
 
 /**
- * Generate cryptographically safe random ID
+ * Check if user has required permission
  */
-const generateRandomId = () => {
-  return crypto.randomBytes(REQUEST_ID_CONFIG.BYTE_LENGTH).toString("hex");
-};
+const checkPermission = (...requiredPermissions) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED'
+      });
+    }
 
-/**
- * Generate final request id
- * Example: req-1700000000-abc123
- */
-const generateRequestId = () => {
-  const timestamp = Date.now();
-  const random = generateRandomId();
-  return `${REQUEST_ID_CONFIG.PREFIX}-${timestamp}-${random}`;
-};
+    // Get user's role(s)
+    const userRole = getUserRole(req);
 
-/**
- * Validate incoming request ID
- */
-const isValidRequestId = (id) => {
-  if (!id) return false;
-  if (typeof id !== "string") return false;
-  if (id.length < 10 || id.length > 200) return false;
-  return true;
-};
+    // System admins bypass all checks
+    if (userRole === SYSTEM_ROLES.SUPER_ADMIN) {
+      return next();
+    }
 
-/* ============================================================
-   📦 REQUEST CONTEXT STORAGE
-   (For future async extensions)
-============================================================ */
+    // Check each required permission
+    const missingPermissions = [];
 
-const requestContext = new Map();
+    for (const permission of requiredPermissions) {
+      if (!hasPermission(userRole, permission)) {
+        missingPermissions.push(permission);
+      }
+    }
 
-/**
- * Save request context
- */
-const saveContext = (requestId, data) => {
-  requestContext.set(requestId, {
-    ...data,
-    createdAt: Date.now(),
-  });
+    if (missingPermissions.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions',
+        code: 'PERMISSION_DENIED',
+        required: requiredPermissions,
+        missing: missingPermissions
+      });
+    }
+
+    // Attach permissions to request
+    req.userPermissions = getPermissions(userRole);
+
+    next();
+  };
 };
 
 /**
- * Clear request context
+ * Get user's role in current tenant context
  */
-const clearContext = (requestId) => {
-  requestContext.delete(requestId);
-};
+const getUserRole = (req) => {
+  const user = req.user;
+  const tenant = req.tenant;
 
-/* ============================================================
-   🧾 LOG HELPERS
-============================================================ */
-
-const logRequestStart = (req) => {
-  if (!REQUEST_ID_CONFIG.ENABLE_LOGGING) return;
-
-  console.info("➡️ Incoming request", {
-    requestId: req.requestId,
-    method: req.method,
-    path: req.originalUrl,
-    ip: req.ip,
-  });
-};
-
-const logRequestEnd = (req, res) => {
-  if (!REQUEST_ID_CONFIG.ENABLE_LOGGING) return;
-
-  console.info("⬅️ Request completed", {
-    requestId: req.requestId,
-    statusCode: res.statusCode,
-    durationMs: Date.now() - req._requestStartTime,
-  });
-};
-
-/* ============================================================
-   🛡️ MAIN REQUEST ID MIDDLEWARE
-============================================================ */
-
-const requestIdMiddleware = (req, res, next) => {
-  // Capture start time
-  req._requestStartTime = Date.now();
-
-  // 1️⃣ Try to read from incoming headers
-  let incomingRequestId = req.headers[REQUEST_ID_HEADER];
-
-  // 2️⃣ Validate incoming ID
-  if (!isValidRequestId(incomingRequestId)) {
-    incomingRequestId = null;
+  // Check for system-level role first
+  if (user.systemRole) {
+    return user.systemRole;
   }
 
-  // 3️⃣ Generate new ID if not present
-  const requestId = incomingRequestId || generateRequestId();
+  // If no tenant context, default to guest
+  if (!tenant) {
+    return TENANT_ROLES.GUEST;
+  }
 
-  // 4️⃣ Attach to request
-  req.requestId = requestId;
+  // Check if user is tenant owner
+  if (tenant.owner.toString() === user._id.toString()) {
+    return TENANT_ROLES.OWNER;
+  }
 
-  // 5️⃣ Attach to response headers
-  res.setHeader(RESPONSE_HEADER, requestId);
+  // Check if user is tenant admin
+  if (tenant.admins.some(a => a.toString() === user._id.toString())) {
+    return TENANT_ROLES.ADMIN;
+  }
 
-  // 6️⃣ Save request context
-  saveContext(requestId, {
-    path: req.originalUrl,
-    method: req.method,
-  });
+  // Get user's role for this tenant from user's tenantRoles
+  if (user.tenantRoles && user.tenantRoles[tenant._id.toString()]) {
+    return user.tenantRoles[tenant._id.toString()];
+  }
 
-  // 7️⃣ Log request start
-  logRequestStart(req);
+  // Default role from tenant settings
+  return tenant.settings?.defaultRole || TENANT_ROLES.MEMBER;
+};
 
-  // 8️⃣ Cleanup after response
-  res.on("finish", () => {
-    logRequestEnd(req, res);
-    clearContext(requestId);
-  });
+/**
+ * Require any of the specified roles
+ */
+const requireRole = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED'
+      });
+    }
+
+    const userRole = getUserRole(req);
+
+    // System admins bypass role checks
+    if (userRole === SYSTEM_ROLES.SUPER_ADMIN) {
+      return next();
+    }
+
+    if (!roles.includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Required role not found.',
+        code: 'ROLE_REQUIRED',
+        required: roles,
+        current: userRole
+      });
+    }
+
+    req.userRole = userRole;
+    next();
+  };
+};
+
+/**
+ * Require minimum role level
+ */
+const requireMinRole = (minRole) => {
+  const roleHierarchy = [
+    TENANT_ROLES.GUEST,
+    TENANT_ROLES.MEMBER,
+    TENANT_ROLES.MODERATOR,
+    TENANT_ROLES.ADMIN,
+    TENANT_ROLES.OWNER
+  ];
+
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED'
+      });
+    }
+
+    const userRole = getUserRole(req);
+
+    // System admins bypass role checks
+    if (Object.values(SYSTEM_ROLES).includes(userRole)) {
+      return next();
+    }
+
+    const userRoleIndex = roleHierarchy.indexOf(userRole);
+    const minRoleIndex = roleHierarchy.indexOf(minRole);
+
+    if (userRoleIndex < minRoleIndex) {
+      return res.status(403).json({
+        success: false,
+        message: `Access denied. Minimum role required: ${minRole}`,
+        code: 'INSUFFICIENT_ROLE',
+        required: minRole,
+        current: userRole
+      });
+    }
+
+    req.userRole = userRole;
+    next();
+  };
+};
+
+/**
+ * Require resource ownership or specific permission
+ */
+const requireOwnershipOrPermission = (getResourceOwnerId, permission) => {
+  return async (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED'
+      });
+    }
+
+    const userRole = getUserRole(req);
+
+    // System admins bypass ownership checks
+    if (userRole === SYSTEM_ROLES.SUPER_ADMIN) {
+      return next();
+    }
+
+    // Check if user has the bypass permission
+    if (hasPermission(userRole, permission)) {
+      return next();
+    }
+
+    // Check resource ownership
+    try {
+      const ownerId = await getResourceOwnerId(req);
+
+      if (ownerId && ownerId.toString() === req.user._id.toString()) {
+        req.isResourceOwner = true;
+        return next();
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not own this resource.',
+        code: 'NOT_OWNER'
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error checking resource ownership',
+        code: 'OWNERSHIP_CHECK_FAILED'
+      });
+    }
+  };
+};
+
+/**
+ * Tenant-scoped query middleware
+ * Automatically adds tenant filter to queries
+ */
+const scopeToTenant = (req, res, next) => {
+  if (req.tenant) {
+    // Attach tenant scope to request for use in controllers
+    req.tenantScope = { tenantId: req.tenant._id };
+
+    // Override query params to include tenant filter
+    if (!req.query) req.query = {};
+    req.query.tenantId = req.tenant._id;
+  }
 
   next();
 };
 
-/* ============================================================
-   🧪 SKIP CONDITIONS
-============================================================ */
+/**
+ * Log permission check for auditing
+ */
+const auditPermission = (action) => {
+  return (req, res, next) => {
+    const user = req.user;
+    const tenant = req.tenant;
+    const userRole = user ? getUserRole(req) : 'anonymous';
 
-const shouldSkipRequestId = (req) => {
-  return (
-    req.originalUrl === "/health" ||
-    req.originalUrl === "/"
-  );
+    console.log(`[RBAC Audit] Action: ${action}, User: ${user?._id}, Role: ${userRole}, Tenant: ${tenant?.tenantId}`);
+
+    next();
+  };
 };
-
-/* ============================================================
-   🧩 SAFE WRAPPER
-============================================================ */
-
-const safeRequestIdMiddleware = (req, res, next) => {
-  if (shouldSkipRequestId(req)) {
-    return next();
-  }
-  return requestIdMiddleware(req, res, next);
-};
-
-/* ============================================================
-   📤 EXPORTS
-============================================================ */
 
 module.exports = {
-  REQUEST_ID_HEADER,
-  RESPONSE_HEADER,
-  requestIdMiddleware,
-  safeRequestIdMiddleware,
+  checkPermission,
+  requireRole,
+  requireMinRole,
+  requireOwnershipOrPermission,
+  scopeToTenant,
+  auditPermission,
+  getUserRole,
+  PERMISSIONS,
+  TENANT_ROLES,
+  SYSTEM_ROLES
 };
